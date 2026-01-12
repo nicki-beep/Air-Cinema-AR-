@@ -1,111 +1,88 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Dual-Phone AR Cinema</title>
+    <title>World-Locked AR Cinema</title>
     <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-    
     <style>
-        body { margin: 0; overflow: hidden; font-family: sans-serif; }
+        body { margin: 0; overflow: hidden; background: #000; }
         .ui-panel {
             position: absolute; top: 10px; left: 10px; z-index: 1000;
-            background: rgba(255, 255, 255, 0.9);
-            padding: 15px; border-radius: 10px; width: 280px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            background: rgba(0, 0, 0, 0.75); color: white;
+            padding: 15px; border-radius: 12px; width: 280px;
         }
-        input { width: 90%; padding: 8px; margin: 10px 0; border: 1px solid #ccc; }
         button { 
-            width: 100%; padding: 10px; margin: 5px 0; 
-            background: #28a745; color: white; border: none; 
-            border-radius: 5px; font-weight: bold; cursor: pointer;
+            padding: 10px; margin: 4px; border: none; border-radius: 6px;
+            cursor: pointer; font-weight: bold; background: #007bff; color: white;
         }
-        .share-btn { background: #007bff; }
-        #my-id { font-weight: bold; color: #d9534f; word-break: break-all; }
-        .status { font-size: 0.8em; color: #666; margin-top: 5px; }
+        .move-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
     </style>
 </head>
 <body>
 
-    <div class="ui-panel">
-        <div id="my-id">Generating ID...</div>
-        <div class="status">Step 1: On Phone B, get this ID.</div>
-        
-        <input type="text" id="target-id" placeholder="Paste Phone B ID here">
-        
-        <button class="share-btn" onclick="startSharing()">Phone A: START SHARING</button>
-        <button onclick="toggleMenu()">Hide/Show Menu</button>
-        <div class="status">Note: On Android, use "Desktop Site" mode to share.</div>
+    <div class="ui-panel" id="menu">
+        <div id="my-id" style="color:#0f0">ID: Loading...</div>
+        <input type="text" id="target-id" style="width:90%; padding:5px; margin:10px 0;" placeholder="Phone B ID">
+        <button onclick="startSharing()" style="width:100%; background:#28a745">PHONE A: SHARE SCREEN</button>
+        <hr>
+        <div class="move-btns">
+            <button onclick="moveScreen('z', 0.5)">Bring Closer</button>
+            <button onclick="moveScreen('z', -0.5)">Push Away</button>
+            <button onclick="moveScreen('y', 0.2)">Move Up</button>
+            <button onclick="moveScreen('y', -0.2)">Move Down</button>
+        </div>
+        <button onclick="document.getElementById('menu').style.display='none'" style="width:100%; margin-top:10px; background:#555">HIDE MENU</button>
     </div>
 
-    <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false;">
+    <a-scene embedded arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false;">
+        
         <a-assets>
             <video id="shared-video" autoplay playsinline crossorigin="anonymous"></video>
         </a-assets>
 
-        <a-video id="screen" src="#shared-video" 
+        <a-video id="floating-screen" src="#shared-video" 
                  width="4" height="2.25" 
-                 position="0 1.6 -3" 
-                 rotation="0 0 0">
+                 position="0 1.6 -3"
+                 rotation="0 0 0"
+                 material="shader: flat; side: double">
         </a-video>
 
-        <a-entity camera></a-entity>
+        <a-entity camera look-controls position="0 1.6 0"></a-entity>
+        
     </a-scene>
 
     <script>
         const peer = new Peer();
         const videoElement = document.getElementById('shared-video');
-        const idDisplay = document.getElementById('my-id');
+        const screen = document.getElementById('floating-screen');
 
-        // Get your unique ID from PeerJS
-        peer.on('open', (id) => {
-            idDisplay.innerText = "Your ID: " + id;
-        });
+        peer.on('open', (id) => { document.getElementById('my-id').innerText = "Your ID: " + id; });
 
-        // PHONE B: Listening for the incoming screen share
         peer.on('call', (call) => {
-            console.log("Receiving screen share...");
-            call.answer(); // Answer the call
-            call.on('stream', (remoteStream) => {
-                videoElement.srcObject = remoteStream;
-                videoElement.play().catch(e => console.log("Play blocked, need tap."));
+            call.answer();
+            call.on('stream', (stream) => {
+                videoElement.srcObject = stream;
+                videoElement.play();
             });
         });
 
-        // PHONE A: Sharing your screen
         async function startSharing() {
-            const targetId = document.getElementById('target-id').value;
-            if (!targetId) {
-                alert("Please enter Phone B's ID first!");
-                return;
-            }
-
+            const tid = document.getElementById('target-id').value;
             try {
-                // Request screen capture
-                const stream = await navigator.mediaDevices.getDisplayMedia({
-                    video: { cursor: "always" },
-                    audio: false
-                });
-                
-                // Send the stream to Phone B
-                peer.call(targetId, stream);
-                alert("Screen sending! Switch to YouTube now.");
-            } catch (err) {
-                alert("Error: " + err + "\n\nTry enabling 'Desktop Site' in Chrome settings!");
-            }
+                const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                peer.call(tid, stream);
+            } catch (e) { alert("Enable 'Desktop Site' in Chrome!"); }
         }
 
-        function toggleMenu() {
-            const panel = document.querySelector('.ui-panel');
-            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        // Function to adjust position while in VR
+        function moveScreen(axis, amount) {
+            let pos = screen.getAttribute('position');
+            pos[axis] += amount;
+            screen.setAttribute('position', pos);
         }
 
-        // Allow Phone B to start video audio/play via tap anywhere
-        window.addEventListener('click', () => {
-            if (videoElement.srcObject) {
-                videoElement.play();
-            }
-        });
+        window.addEventListener('click', () => { videoElement.play(); });
     </script>
 </body>
 </html>
