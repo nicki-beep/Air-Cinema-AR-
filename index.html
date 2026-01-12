@@ -1,81 +1,119 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Spatial AR Desktop</title>
-    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
-    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+    <title>Vision Pro WebXR Desktop</title>
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; }
-        .glass-ui {
-            position: absolute; top: 20px; left: 20px; z-index: 1000;
-            background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(10px);
-            padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.3);
-            color: white; font-family: 'Segoe UI', sans-serif;
+        body { margin: 0; overflow: hidden; font-family: 'Inter', sans-serif; }
+        #overlay {
+            position: absolute; top: 20px; left: 20px; z-index: 10;
+            background: rgba(0,0,0,0.7); color: white; padding: 20px;
+            border-radius: 15px; backdrop-filter: blur(10px); width: 280px;
         }
-        button {
-            background: #fff; color: #000; border: none; padding: 10px 20px;
-            border-radius: 30px; font-weight: bold; cursor: pointer; margin-top: 10px;
+        .btn {
+            background: #fff; color: #000; border: none; padding: 12px;
+            width: 100%; border-radius: 8px; font-weight: bold; margin-top: 10px;
+        }
+        #reticle-msg {
+            position: absolute; bottom: 30px; width: 100%; text-align: center;
+            color: white; font-weight: bold; text-shadow: 0 0 10px #000; display: none;
         }
     </style>
 </head>
 <body>
 
-    <div class="glass-ui" id="gui">
-        <div id="id-tag">ID: Loading...</div>
-        <input type="text" id="partner-id" placeholder="Paste ID here" style="margin-top:10px; border-radius:5px; padding:5px;">
-        <br>
-        <button onclick="startCast()">Cast My Screen</button>
-        <button onclick="this.parentElement.style.display='none'" style="background:none; color:white; border:1px solid white;">Hide Interface</button>
+    <div id="overlay">
+        <div id="my-id">ID: Connecting...</div>
+        <input type="text" id="target-id" placeholder="Partner ID" style="width:90%; padding:8px; margin:10px 0;">
+        <button class="btn" onclick="startBroadcasting()">CAST SCREEN</button>
+        <button class="btn" style="background:#444; color:white;" onclick="this.parentElement.style.display='none'">HIDE MENU</button>
     </div>
 
-    <a-scene embedded arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false;" renderer="antialias: true; colorManagement: true;">
+    <div id="reticle-msg">POINT AT FLOOR AND TAP TO PLACE SCREEN</div>
+
+    <a-scene webxr="optionalFeatures: hit-test, local-floor; overlayElement: #overlay;">
         
         <a-assets>
-            <video id="stream-view" autoplay playsinline crossorigin="anonymous"></video>
+            <video id="shared-video" autoplay playsinline crossorigin="anonymous"></video>
         </a-assets>
 
-        <a-video id="main-screen" src="#stream-view" 
-                 width="4" height="2.25" 
-                 position="0 1.6 -4" 
-                 material="shader: flat; side: double; transparent: true; opacity: 0.95"
-                 geometry="primitive: plane; skipCache: true">
-            <a-entity geometry="primitive: plane; width: 4.1; height: 2.35" 
-                      material="color: white; shader: flat; side: back" 
-                      position="0 0 -0.01"></a-entity>
+        <a-video id="floating-screen" src="#shared-video" 
+                 width="3.2" height="1.8" 
+                 visible="false"
+                 material="shader: flat; side: double; transparent: true; opacity: 0.9">
         </a-video>
 
-        <a-entity camera look-controls position="0 1.6 0"></a-entity>
-        
+        <a-entity id="reticle" visible="false">
+            <a-ring color="#00ff00" rotation="-90 0 0" radius-inner="0.1" radius-outer="0.15"></a-ring>
+        </a-entity>
+
+        <a-entity camera position="0 1.6 0"></a-entity>
     </a-scene>
 
     <script>
         const peer = new Peer();
-        const vid = document.getElementById('stream-view');
+        const video = document.getElementById('shared-video');
+        const screen = document.getElementById('floating-screen');
+        const reticle = document.getElementById('reticle');
+        const msg = document.getElementById('reticle-msg');
+        let hitTestResults = [];
 
-        peer.on('open', id => { document.getElementById('id-tag').innerText = "Your ID: " + id; });
+        peer.on('open', id => document.getElementById('my-id').innerText = "ID: " + id);
 
+        // Phone B (Viewer) Logic
         peer.on('call', call => {
             call.answer();
             call.on('stream', s => {
-                vid.srcObject = s;
-                vid.play();
-                document.getElementById('gui').style.display = 'none'; // Auto-hide menu when connected
+                video.srcObject = s;
+                video.play();
+                msg.style.display = "block"; // Show "Point at floor" instruction
             });
         });
 
-        async function startCast() {
-            const pid = document.getElementById('partner-id').value;
+        // Phone A (Projector) Logic
+        async function startBroadcasting() {
+            const tid = document.getElementById('target-id').value;
             try {
-                // If this fails on mobile, try using a Laptop as the 'Projector'
                 const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-                peer.call(pid, stream);
-            } catch (e) {
-                alert("Mobile security blocked screen sharing. Use a Laptop to 'Cast' to your phone!");
-            }
+                peer.call(tid, stream);
+            } catch (e) { alert("Enable 'Desktop Site' mode in Chrome settings!"); }
         }
 
-        window.addEventListener('click', () => { vid.play(); });
+        // WebXR Hit-Test Logic (Placing the screen)
+        const sceneEl = document.querySelector('a-scene');
+        sceneEl.addEventListener('enter-vr', () => {
+            const session = sceneEl.xrSession;
+            session.requestReferenceSpace('viewer').then(refSpace => {
+                session.requestHitTestSource({ space: refSpace }).then(source => {
+                    this.hitTestSource = source;
+                });
+            });
+        });
+
+        sceneEl.addEventListener('click', (event) => {
+            if (reticle.getAttribute('visible')) {
+                // Pin the screen to the floor position
+                screen.setAttribute('position', reticle.getAttribute('position'));
+                screen.setAttribute('visible', 'true');
+                msg.style.display = "none";
+            }
+        });
+
+        // Run every frame to update reticle position
+        sceneEl.addEventListener('render-target-loaded', () => {
+            sceneEl.renderer.setAnimationLoop((time, frame) => {
+                if (frame && this.hitTestSource) {
+                    const results = frame.getHitTestResults(this.hitTestSource);
+                    if (results.length > 0) {
+                        const hit = results[0];
+                        const pose = hit.getPose(sceneEl.xrSession.requestReferenceSpace('local'));
+                        reticle.setAttribute('visible', 'true');
+                        reticle.setAttribute('position', pose.transform.position);
+                    }
+                }
+            });
+        });
     </script>
 </body>
 </html>
