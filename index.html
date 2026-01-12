@@ -1,21 +1,111 @@
-// ... (Keep your PeerJS setup code) ...
-
-        // NEW: Test Function to bypass the error
-        function playTestVideo() {
-            // This is a sample MP4 link
-            videoElement.src = "https://vjs.zencdn.net/v/oceans.mp4";
-            videoElement.play();
-            alert("Playing test video on the floating screen!");
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dual-Phone AR Cinema</title>
+    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    
+    <style>
+        body { margin: 0; overflow: hidden; font-family: sans-serif; }
+        .ui-panel {
+            position: absolute; top: 10px; left: 10px; z-index: 1000;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px; border-radius: 10px; width: 280px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         }
+        input { width: 90%; padding: 8px; margin: 10px 0; border: 1px solid #ccc; }
+        button { 
+            width: 100%; padding: 10px; margin: 5px 0; 
+            background: #28a745; color: white; border: none; 
+            border-radius: 5px; font-weight: bold; cursor: pointer;
+        }
+        .share-btn { background: #007bff; }
+        #my-id { font-weight: bold; color: #d9534f; word-break: break-all; }
+        .status { font-size: 0.8em; color: #666; margin-top: 5px; }
+    </style>
+</head>
+<body>
 
-        // UPDATED: Improved Share Screen function with error catch
-        async function startBroadcasting() {
+    <div class="ui-panel">
+        <div id="my-id">Generating ID...</div>
+        <div class="status">Step 1: On Phone B, get this ID.</div>
+        
+        <input type="text" id="target-id" placeholder="Paste Phone B ID here">
+        
+        <button class="share-btn" onclick="startSharing()">Phone A: START SHARING</button>
+        <button onclick="toggleMenu()">Hide/Show Menu</button>
+        <div class="status">Note: On Android, use "Desktop Site" mode to share.</div>
+    </div>
+
+    <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false;">
+        <a-assets>
+            <video id="shared-video" autoplay playsinline crossorigin="anonymous"></video>
+        </a-assets>
+
+        <a-video id="screen" src="#shared-video" 
+                 width="4" height="2.25" 
+                 position="0 1.6 -3" 
+                 rotation="0 0 0">
+        </a-video>
+
+        <a-entity camera></a-entity>
+    </a-scene>
+
+    <script>
+        const peer = new Peer();
+        const videoElement = document.getElementById('shared-video');
+        const idDisplay = document.getElementById('my-id');
+
+        // Get your unique ID from PeerJS
+        peer.on('open', (id) => {
+            idDisplay.innerText = "Your ID: " + id;
+        });
+
+        // PHONE B: Listening for the incoming screen share
+        peer.on('call', (call) => {
+            console.log("Receiving screen share...");
+            call.answer(); // Answer the call
+            call.on('stream', (remoteStream) => {
+                videoElement.srcObject = remoteStream;
+                videoElement.play().catch(e => console.log("Play blocked, need tap."));
+            });
+        });
+
+        // PHONE A: Sharing your screen
+        async function startSharing() {
+            const targetId = document.getElementById('target-id').value;
+            if (!targetId) {
+                alert("Please enter Phone B's ID first!");
+                return;
+            }
+
             try {
-                const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-                const targetId = document.getElementById('target-id').value;
+                // Request screen capture
+                const stream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { cursor: "always" },
+                    audio: false
+                });
+                
+                // Send the stream to Phone B
                 peer.call(targetId, stream);
+                alert("Screen sending! Switch to YouTube now.");
             } catch (err) {
-                alert("Screen share still blocked. Try 'Desktop Site' mode or use the Test Video button.");
-                console.error(err);
+                alert("Error: " + err + "\n\nTry enabling 'Desktop Site' in Chrome settings!");
             }
         }
+
+        function toggleMenu() {
+            const panel = document.querySelector('.ui-panel');
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        }
+
+        // Allow Phone B to start video audio/play via tap anywhere
+        window.addEventListener('click', () => {
+            if (videoElement.srcObject) {
+                videoElement.play();
+            }
+        });
+    </script>
+</body>
+</html>
