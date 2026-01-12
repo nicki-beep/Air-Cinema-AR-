@@ -1,51 +1,48 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>World-Locked AR Cinema</title>
+    <title>Spatial AR Desktop</title>
     <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; }
-        .ui-panel {
-            position: absolute; top: 10px; left: 10px; z-index: 1000;
-            background: rgba(0, 0, 0, 0.75); color: white;
-            padding: 15px; border-radius: 12px; width: 280px;
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        .glass-ui {
+            position: absolute; top: 20px; left: 20px; z-index: 1000;
+            background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(10px);
+            padding: 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.3);
+            color: white; font-family: 'Segoe UI', sans-serif;
         }
-        button { 
-            padding: 10px; margin: 4px; border: none; border-radius: 6px;
-            cursor: pointer; font-weight: bold; background: #007bff; color: white;
+        button {
+            background: #fff; color: #000; border: none; padding: 10px 20px;
+            border-radius: 30px; font-weight: bold; cursor: pointer; margin-top: 10px;
         }
-        .move-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
     </style>
 </head>
 <body>
 
-    <div class="ui-panel" id="menu">
-        <div id="my-id" style="color:#0f0">ID: Loading...</div>
-        <input type="text" id="target-id" style="width:90%; padding:5px; margin:10px 0;" placeholder="Phone B ID">
-        <button onclick="startSharing()" style="width:100%; background:#28a745">PHONE A: SHARE SCREEN</button>
-        <hr>
-        <div class="move-btns">
-            <button onclick="moveScreen('z', 0.5)">Bring Closer</button>
-            <button onclick="moveScreen('z', -0.5)">Push Away</button>
-            <button onclick="moveScreen('y', 0.2)">Move Up</button>
-            <button onclick="moveScreen('y', -0.2)">Move Down</button>
-        </div>
-        <button onclick="document.getElementById('menu').style.display='none'" style="width:100%; margin-top:10px; background:#555">HIDE MENU</button>
+    <div class="glass-ui" id="gui">
+        <div id="id-tag">ID: Loading...</div>
+        <input type="text" id="partner-id" placeholder="Paste ID here" style="margin-top:10px; border-radius:5px; padding:5px;">
+        <br>
+        <button onclick="startCast()">Cast My Screen</button>
+        <button onclick="this.parentElement.style.display='none'" style="background:none; color:white; border:1px solid white;">Hide Interface</button>
     </div>
 
-    <a-scene embedded arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false;">
+    <a-scene embedded arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false;" renderer="antialias: true; colorManagement: true;">
         
         <a-assets>
-            <video id="shared-video" autoplay playsinline crossorigin="anonymous"></video>
+            <video id="stream-view" autoplay playsinline crossorigin="anonymous"></video>
         </a-assets>
 
-        <a-video id="floating-screen" src="#shared-video" 
+        <a-video id="main-screen" src="#stream-view" 
                  width="4" height="2.25" 
-                 position="0 1.6 -3"
-                 rotation="0 0 0"
-                 material="shader: flat; side: double">
+                 position="0 1.6 -4" 
+                 material="shader: flat; side: double; transparent: true; opacity: 0.95"
+                 geometry="primitive: plane; skipCache: true">
+            <a-entity geometry="primitive: plane; width: 4.1; height: 2.35" 
+                      material="color: white; shader: flat; side: back" 
+                      position="0 0 -0.01"></a-entity>
         </a-video>
 
         <a-entity camera look-controls position="0 1.6 0"></a-entity>
@@ -54,35 +51,31 @@
 
     <script>
         const peer = new Peer();
-        const videoElement = document.getElementById('shared-video');
-        const screen = document.getElementById('floating-screen');
+        const vid = document.getElementById('stream-view');
 
-        peer.on('open', (id) => { document.getElementById('my-id').innerText = "Your ID: " + id; });
+        peer.on('open', id => { document.getElementById('id-tag').innerText = "Your ID: " + id; });
 
-        peer.on('call', (call) => {
+        peer.on('call', call => {
             call.answer();
-            call.on('stream', (stream) => {
-                videoElement.srcObject = stream;
-                videoElement.play();
+            call.on('stream', s => {
+                vid.srcObject = s;
+                vid.play();
+                document.getElementById('gui').style.display = 'none'; // Auto-hide menu when connected
             });
         });
 
-        async function startSharing() {
-            const tid = document.getElementById('target-id').value;
+        async function startCast() {
+            const pid = document.getElementById('partner-id').value;
             try {
+                // If this fails on mobile, try using a Laptop as the 'Projector'
                 const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-                peer.call(tid, stream);
-            } catch (e) { alert("Enable 'Desktop Site' in Chrome!"); }
+                peer.call(pid, stream);
+            } catch (e) {
+                alert("Mobile security blocked screen sharing. Use a Laptop to 'Cast' to your phone!");
+            }
         }
 
-        // Function to adjust position while in VR
-        function moveScreen(axis, amount) {
-            let pos = screen.getAttribute('position');
-            pos[axis] += amount;
-            screen.setAttribute('position', pos);
-        }
-
-        window.addEventListener('click', () => { videoElement.play(); });
+        window.addEventListener('click', () => { vid.play(); });
     </script>
 </body>
 </html>
