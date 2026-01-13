@@ -1,26 +1,51 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Visible AR Cinema</title>
+    <title>Immersive AR Cinema</title>
     <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; }
-        .ui { position: absolute; z-index: 1000; top: 10px; left: 10px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 10px; color: white; width: 260px; }
-        button { padding: 12px; width: 100%; margin-top: 8px; cursor: pointer; border-radius: 8px; border: none; font-weight: bold; background: #007bff; color: white; }
-        .log-box { position: absolute; bottom: 10px; left: 10px; width: 90%; background: rgba(0,0,0,0.5); color: #0f0; font-family: monospace; font-size: 10px; z-index: 1000; max-height: 80px; overflow-y: scroll; pointer-events: none; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        /* Translucent UI Panel */
+        .ui { 
+            position: absolute; z-index: 1000; top: 10px; left: 10px; 
+            background: rgba(0,0,0,0.7); padding: 15px; border-radius: 12px; 
+            color: white; width: 260px; border: 1px solid rgba(255,255,255,0.2);
+        }
+        button { 
+            padding: 10px; width: 100%; margin-top: 6px; cursor: pointer; 
+            border-radius: 6px; border: none; font-weight: bold; 
+            background: #007bff; color: white; transition: 0.2s;
+        }
+        button:active { transform: scale(0.98); }
+        .fullscreen-btn { background: #6c5ce7; }
+        .exit-btn { background: #e84393; }
+        .log-box { 
+            position: absolute; bottom: 10px; left: 10px; width: 90%; 
+            background: rgba(0,0,0,0.4); color: #00ff00; font-family: monospace; 
+            font-size: 10px; z-index: 1000; max-height: 60px; overflow-y: auto; pointer-events: none; 
+        }
     </style>
 </head>
 <body>
 
-    <div class="ui">
-        <div id="status">🔵 Connecting...</div>
-        <div id="my-id" style="font-family: monospace; color: #0f0;">ID: ...</div>
-        <input type="text" id="target-id" placeholder="Partner ID" style="width:90%; padding:8px; margin:10px 0; border-radius: 4px;">
-        <button onclick="startSharing()">SHARE SCREEN</button>
-        <button onclick="recenterScreen()" style="background:#f39c12;">BRING SCREEN TO ME</button>
-        <button onclick="manualPlay()" style="background:#28a745;">FORCE VIDEO START</button>
+    <div class="ui" id="main-ui">
+        <div id="status">🔵 System Ready</div>
+        <div id="my-id" style="font-size: 11px; margin: 5px 0; color: #a29bfe;">ID: Generating...</div>
+        
+        <input type="text" id="target-id" placeholder="Paste Partner ID" 
+               style="width:92%; padding:8px; margin:5px 0; border-radius: 4px; border: none;">
+        
+        <button onclick="startSharing()">1. SHARE MY SCREEN</button>
+        <button onclick="manualPlay()" style="background:#28a745;">2. UNBLOCK VIDEO</button>
+        <button onclick="recenterScreen()" style="background:#f39c12;">3. BRING SCREEN TO ME</button>
+        
+        <hr style="opacity: 0.2; margin: 10px 0;">
+        
+        <button class="fullscreen-btn" onclick="openFullscreen()">ENTER FULL SCREEN</button>
+        <button class="exit-btn" onclick="closeFullscreen()">EXIT FULL SCREEN</button>
+        <button onclick="toggleUI()" style="background:#636e72;">HIDE MENU (Double Tap to Show)</button>
     </div>
 
     <div class="log-box" id="logs">LOGS:<br></div>
@@ -32,7 +57,7 @@
 
         <a-entity id="screen-container" position="0 1.6 -3">
             <a-video id="ar-screen" src="#shared-video" width="4" height="2.25" material="shader: flat; side: double;">
-                <a-entity geometry="primitive: plane; width: 4.2; height: 2.4" material="color: red; side: double" position="0 0 -0.01"></a-entity>
+                <a-entity geometry="primitive: plane; width: 4.1; height: 2.35" material="color: cyan; side: double" position="0 0 -0.01"></a-entity>
             </a-video>
         </a-entity>
 
@@ -45,17 +70,18 @@
         const video = document.getElementById('shared-video');
         const screenContainer = document.getElementById('screen-container');
         const camera = document.getElementById('main-cam');
+        const ui = document.getElementById('main-ui');
 
         peer.on('open', (id) => {
-            document.getElementById('my-id').innerText = "ID: " + id;
-            document.getElementById('status').innerText = "🟢 Online";
+            document.getElementById('my-id').innerText = "YOUR ID: " + id;
+            document.getElementById('status').innerText = "🟢 Online & Waiting";
         });
 
         peer.on('call', (call) => {
-            log("Incoming call...");
+            log("Incoming call detected...");
             call.answer();
             call.on('stream', (stream) => {
-                log("STREAM RECEIVED");
+                log("STREAM RECEIVED!");
                 video.srcObject = stream;
                 video.play().then(() => log("Video Playing!")).catch(e => log("Play Error: "+e));
             });
@@ -63,37 +89,57 @@
 
         async function startSharing() {
             const tid = document.getElementById('target-id').value;
+            if(!tid) return alert("Enter the ID of Phone B first!");
             try {
+                // Android MUST be in 'Desktop Site' mode to share
                 const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
                 peer.call(tid, stream);
-                log("Sharing started.");
-            } catch (err) { alert("Use 'Desktop Site' mode!"); }
+                log("Sharing screen to " + tid);
+            } catch (err) { alert("Capture failed. Enable 'Desktop Site' mode!"); }
         }
 
+        // --- POSITION & VIDEO FIXES ---
         function recenterScreen() {
-            log("Recentering...");
-            // Get camera rotation
+            log("Recentering screen...");
             const rotation = camera.getAttribute('rotation');
-            const position = camera.getAttribute('position');
-            
-            // Move container in front of current camera view
             screenContainer.setAttribute('rotation', `0 ${rotation.y} 0`);
-            log("Screen moved to your view.");
         }
 
         function manualPlay() {
             video.muted = false;
             video.play();
-            log("Manual play triggered.");
+            log("Manual play/unmute forced.");
         }
 
-        // Texture Update Loop: Some Androids need this to show the video frame
+        // --- FULL SCREEN LOGIC ---
+        function openFullscreen() {
+            const elem = document.documentElement;
+            if (elem.requestFullscreen) { elem.requestFullscreen(); }
+            else if (elem.webkitRequestFullscreen) { elem.webkitRequestFullscreen(); } // Safari/iOS
+            else if (elem.msRequestFullscreen) { elem.msRequestFullscreen(); } // IE11
+            log("Full Screen Requested");
+        }
+
+        function closeFullscreen() {
+            if (document.exitFullscreen) { document.exitFullscreen(); }
+            else if (document.webkitExitFullscreen) { document.webkitExitFullscreen(); }
+            log("Exited Full Screen");
+        }
+
+        function toggleUI() {
+            ui.style.display = ui.style.display === 'none' ? 'block' : 'none';
+        }
+
+        // Show UI again if you double-tap the screen
+        window.addEventListener('dblclick', toggleUI);
+
+        // Continuous Texture Refresh (Fixes Android black textures)
         setInterval(() => {
             if (video.readyState === video.HAVE_ENOUGH_DATA) {
                 const mesh = document.getElementById('ar-screen').getObject3D('mesh');
                 if (mesh && mesh.material.map) mesh.material.map.needsUpdate = true;
             }
-        }, 100);
+        }, 150);
     </script>
 </body>
 </html>
