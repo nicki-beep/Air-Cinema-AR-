@@ -1,25 +1,26 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Debug AR Cinema</title>
+    <title>Visible AR Cinema</title>
     <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { margin: 0; overflow: hidden; background: #000; }
-        .ui { position: absolute; z-index: 100; top: 10px; left: 10px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 10px; color: white; width: 280px; }
-        .log-box { position: absolute; bottom: 10px; left: 10px; width: 90%; background: rgba(0,0,0,0.5); color: #0f0; font-family: monospace; font-size: 10px; z-index: 100; max-height: 100px; overflow-y: scroll; padding: 5px; }
-        button { padding: 10px; width: 100%; margin-top: 5px; cursor: pointer; border-radius: 5px; border: none; font-weight: bold; }
+        .ui { position: absolute; z-index: 1000; top: 10px; left: 10px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 10px; color: white; width: 260px; }
+        button { padding: 12px; width: 100%; margin-top: 8px; cursor: pointer; border-radius: 8px; border: none; font-weight: bold; background: #007bff; color: white; }
+        .log-box { position: absolute; bottom: 10px; left: 10px; width: 90%; background: rgba(0,0,0,0.5); color: #0f0; font-family: monospace; font-size: 10px; z-index: 1000; max-height: 80px; overflow-y: scroll; pointer-events: none; }
     </style>
 </head>
 <body>
 
     <div class="ui">
-        <div id="status">Status: Connecting to Server...</div>
-        <div id="my-id" style="font-weight: bold; color: #00ff00;">ID: ...</div>
-        <input type="text" id="target-id" placeholder="Paste ID here" style="width:90%; padding:5px; margin-top:10px;">
-        <button onclick="startSharing()" style="background: #007bff; color: white;">SHARE SCREEN</button>
-        <button onclick="playVideoManual()" style="background: #28a745; color: white;">FORCE PLAY VIDEO</button>
+        <div id="status">🔵 Connecting...</div>
+        <div id="my-id" style="font-family: monospace; color: #0f0;">ID: ...</div>
+        <input type="text" id="target-id" placeholder="Partner ID" style="width:90%; padding:8px; margin:10px 0; border-radius: 4px;">
+        <button onclick="startSharing()">SHARE SCREEN</button>
+        <button onclick="recenterScreen()" style="background:#f39c12;">BRING SCREEN TO ME</button>
+        <button onclick="manualPlay()" style="background:#28a745;">FORCE VIDEO START</button>
     </div>
 
     <div class="log-box" id="logs">LOGS:<br></div>
@@ -28,66 +29,71 @@
         <a-assets>
             <video id="shared-video" autoplay playsinline crossorigin="anonymous" muted></video>
         </a-assets>
-        <a-video id="ar-screen" src="#shared-video" width="4" height="2.25" position="0 1.6 -3"></a-video>
-        <a-camera position="0 1.6 0"></a-camera>
+
+        <a-entity id="screen-container" position="0 1.6 -3">
+            <a-video id="ar-screen" src="#shared-video" width="4" height="2.25" material="shader: flat; side: double;">
+                <a-entity geometry="primitive: plane; width: 4.2; height: 2.4" material="color: red; side: double" position="0 0 -0.01"></a-entity>
+            </a-video>
+        </a-entity>
+
+        <a-entity id="main-cam" camera look-controls position="0 1.6 0"></a-entity>
     </a-scene>
 
     <script>
-        const log = (msg) => { document.getElementById('logs').innerHTML += "> " + msg + "<br>"; };
-        
-        // PeerJS with Public Google STUN servers (helps get through firewalls)
-        const peer = new Peer({
-            config: {'iceServers': [{ 'urls': 'stun:stun.l.google.com:19302' }]}
-        });
-
+        const log = (m) => { document.getElementById('logs').innerHTML += "> " + m + "<br>"; };
+        const peer = new Peer();
         const video = document.getElementById('shared-video');
+        const screenContainer = document.getElementById('screen-container');
+        const camera = document.getElementById('main-cam');
 
         peer.on('open', (id) => {
-            document.getElementById('my-id').innerText = "Your ID: " + id;
-            document.getElementById('status').innerText = "Status: Online";
-            log("Connected to PeerServer. Ready.");
+            document.getElementById('my-id').innerText = "ID: " + id;
+            document.getElementById('status').innerText = "🟢 Online";
         });
 
-        // PHONE B: Receiving
         peer.on('call', (call) => {
-            log("Incoming call detected...");
+            log("Incoming call...");
             call.answer();
             call.on('stream', (stream) => {
-                log("STREAM RECEIVED! Attaching to video...");
+                log("STREAM RECEIVED");
                 video.srcObject = stream;
-                
-                // On some phones, we must wait for metadata before playing
-                video.onloadedmetadata = () => {
-                    log("Metadata loaded. Resolution: " + video.videoWidth + "x" + video.videoHeight);
-                    video.play().then(() => {
-                        log("VIDEO PLAYING SUCCESSFULLY");
-                        video.muted = false; // Now we can unmute
-                    }).catch(e => log("Play Error: " + e));
-                };
+                video.play().then(() => log("Video Playing!")).catch(e => log("Play Error: "+e));
             });
         });
 
-        // PHONE A: Sharing
         async function startSharing() {
             const tid = document.getElementById('target-id').value;
-            log("Attempting to share with: " + tid);
             try {
-                // Low-res constraints to make it easier for the receiver to decode
-                const stream = await navigator.mediaDevices.getDisplayMedia({ 
-                    video: { width: 1280, height: 720, frameRate: 15 } 
-                });
-                log("Screen captured. Calling...");
+                const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
                 peer.call(tid, stream);
-            } catch (err) {
-                log("Capture Error: " + err);
-                alert("Use 'Desktop Site' mode in Chrome settings!");
-            }
+                log("Sharing started.");
+            } catch (err) { alert("Use 'Desktop Site' mode!"); }
         }
 
-        function playVideoManual() {
-            log("Manual play requested...");
-            video.play();
+        function recenterScreen() {
+            log("Recentering...");
+            // Get camera rotation
+            const rotation = camera.getAttribute('rotation');
+            const position = camera.getAttribute('position');
+            
+            // Move container in front of current camera view
+            screenContainer.setAttribute('rotation', `0 ${rotation.y} 0`);
+            log("Screen moved to your view.");
         }
+
+        function manualPlay() {
+            video.muted = false;
+            video.play();
+            log("Manual play triggered.");
+        }
+
+        // Texture Update Loop: Some Androids need this to show the video frame
+        setInterval(() => {
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                const mesh = document.getElementById('ar-screen').getObject3D('mesh');
+                if (mesh && mesh.material.map) mesh.material.map.needsUpdate = true;
+            }
+        }, 100);
     </script>
 </body>
 </html>
